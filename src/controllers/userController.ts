@@ -61,6 +61,9 @@ export class UserController {
                     isActive: true,
                     createdAt: true,
                     updatedAt: true
+                },
+                relations: {
+                    tasks: true
                 }
             });
 
