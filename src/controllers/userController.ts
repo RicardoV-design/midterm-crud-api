@@ -1,6 +1,8 @@
 import { Request, Response } from 'express'; 
 import { AppDataSource } from '../config/data-source';
 import { User } from '../entities/User';
+import { CreateUserDto, UpdateUserDto } from '../dto/user.dto';
+import bcrypt from 'bcrypt';
 
 const userRepository = AppDataSource.getRepository(User); 
 
@@ -94,9 +96,9 @@ export class UserController {
         }
     }
     //POST /api/users - Create a new user
-    static async create(req: Request, res: Response) {
+    static async create(req: Request<any, any, CreateUserDto>, res: Response) {
         try {
-            const { name, email, password } = req.body;
+            const { name, email, phoneNumber, password } = req.body;
 
             //Validating 
             if (!name || !email || !password) {
@@ -109,6 +111,22 @@ export class UserController {
                 });
             }
 
+            // Validate optional phoneNumber format if given
+            if (phoneNumber) {
+                //Regex allows optional '+' followed by 10-15 digits
+                const phoneRegex = /^\+?[0-9]{10,13}$/;
+                if (!phoneRegex.test (phoneNumber)) {
+                    return res.status(400).json ({
+                        success:false, 
+                        error: {
+                            code:'INVALID_PHONE', 
+                            message: 'Phone number must between 10-13 digits and may start with '+''
+                        }
+                    });
+                }
+            } 
+
+
             //Checking if email already exists
             const existingUser = await userRepository.findOne({ where: { email } });
             if (existingUser) {
@@ -120,11 +138,15 @@ export class UserController {
                     }
                 });
             }
-            //Creating a new user 
+            //Creating a new user
+            const saltrounds = 10;
+            const hashPassword= await bcrypt.hash(password, saltrounds);
+
             const user = userRepository.create ({
                 name, 
                 email,
-                password
+                password: hashPassword,
+                phoneNumber: phoneNumber || null,
             }); 
 
             const savedUser = await userRepository.save(user);
@@ -150,7 +172,7 @@ export class UserController {
         }
     }
     //PUT /api/users:id - Update a user
-    static async update(req: Request, res: Response) {
+    static async update(req: Request<{ id: string }, any, UpdateUserDto>, res: Response) {
         try {
             const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
             const id = parseInt(idParam, 10);
@@ -177,7 +199,7 @@ export class UserController {
                 });
             }
 
-            const { name, email, isActive } = req.body;
+            const { name, email, isActive, phoneNumber, password } = req.body;
 
             //Checking if email is being changed and already exists
             if (email && email !== user.email) {
@@ -196,6 +218,13 @@ export class UserController {
             if (name !== undefined) user.name = name;
             if (email !== undefined) user.email = email;
             if (isActive !== undefined) user.isActive = isActive; 
+            if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
+
+            //If a new password was provided, hash it before saving
+            if (password !== undefined) {
+                const saltRounds = 10;
+                user.password = await bcrypt.hash(password, saltRounds);
+            }
 
             const updatedUser = await userRepository.save(user); 
 

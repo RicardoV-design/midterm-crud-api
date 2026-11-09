@@ -4,6 +4,9 @@ import cors from 'cors';
 import { AppDataSource } from './config/data-source';
 import { userRoutes } from './routes/userRoutes';
 import { taskRoutes } from './routes/taskRoutes';
+import { categoryRoutes } from './routes/categoryRoutes';
+import { authRoutes } from './routes/authRoutes';
+import { requestLogger } from './middleware/requestLogger';
 import * as dotenv from 'dotenv';
 
 
@@ -17,6 +20,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 
 
 // Health check endpoint
@@ -32,6 +36,8 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api/users', userRoutes);
 app.use('/api', taskRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/auth', authRoutes);
 
 
 // 404 handler

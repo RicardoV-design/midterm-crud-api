@@ -9,6 +9,7 @@ import {
    Index
 } from 'typeorm';
 import { User } from './User';
+import { Category } from './Category'; 
 
 
 @Entity('tasks')
@@ -45,14 +46,25 @@ export class Task {
    @Column({ type: 'date', nullable: true })
    dueDate!: Date | null;
 
-
-   @ManyToOne(() => User, user => user.tasks, { onDelete: 'CASCADE' })
+   // Many tasks can be assigned on a user 
+   @ManyToOne(() => User, user => user.tasks, { onDelete: 'SET NULL' })
    @JoinColumn({ name: 'userId' })
-   user!: User;
+   user!: User | null;
 
+   // Task has categories
+   @ManyToOne(() => Category, category => category.tasks, {onDelete: 'SET NULL'})
+   @JoinColumn({ name: 'categoryId'})
+   category!: Category | null;
 
-   @Column({ type: 'int' })
-   userId!: number;
+   @Column({ type: 'int', nullable: true })
+   categoryId!: number | null;
+
+   @Column({ type: 'int', nullable: true })
+   userId!: number | null;
+
+   // Soft Delete
+   @Column({ type: 'boolean', default: false})
+   isDeleted!: boolean;
 
 
    @CreateDateColumn()

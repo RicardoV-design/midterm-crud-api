@@ -1,11 +1,14 @@
 import { Request, Response } from 'express';
 import { AppDataSource } from '../config/data-source';
-import { Task } from '../entities/Task';
 import { User } from '../entities/User';
+import { Task } from '../entities/Task';
+import { Category } from '../entities/Category';
+import { CreateTaskDto } from '../dto/task.dto';
 
 
 const taskRepository = AppDataSource.getRepository(Task);
 const userRepository = AppDataSource.getRepository(User);
+const categoryRepository = AppDataSource.getRepository(Category);
 
 
 export class TaskController {
@@ -29,19 +32,62 @@ export class TaskController {
                    error: { code: 'USER_NOT_FOUND', message: 'User not found' }
                });
            }
+           
+            // Filtering + Soft Delete + Pagination + Sorting
+            // Extract the filter values from the request URL query
+            const { status, priority, page, limit, sortBy, order } = req.query;
 
+            // Parse pagination values
+            const pageNumber = parseInt(page as string) || 1;
+            const limitNumber = parseInt(limit as string) || 10;
 
-           const tasks = await taskRepository.find({
-               where: { userId },
-               order: { createdAt: 'DESC' }
-           });
+            // SQL Offset (how many rows to skip)
+            const skip = (pageNumber - 1) * limitNumber;
+
+            // Dynamic sorting
+            const sortColumn = (sortBy as string) || 'createdAt';
+            let sortOrder: 'ASC' | 'DESC' = 'DESC';
+
+            if (order && (order as string).toUpperCase() === 'ASC') {
+                sortOrder = 'ASC';
+            }
+
+            // Build the dynamic clause for required userId
+            const whereClause: any = { userId, isDeleted: false };
+
+            // Append filters if they exist in the URL
+            if (status) {
+                whereClause.status = status;
+            }
+            if (priority) {
+                whereClause.priority = priority;
+            }
+
+            // findAndCount using skip (offset) and take (limit)
+            const [tasks, total] = await taskRepository.findAndCount({
+               where: whereClause,
+               order: { [sortColumn]: sortOrder },
+               skip: skip,
+               take: limitNumber
+            });
+
+            //Total pages
+            const totalPages = Math.ceil(total / limitNumber);
 
 
            res.json({
-               success: true,
-               count: tasks.length,
-               data: tasks
-           });
+                success: true,
+                data: tasks,
+                meta: {
+                    total: total,
+                    page: pageNumber,
+                    limit: limitNumber,
+                    totalPages: totalPages,
+                    sortBy: sortColumn,
+                    order:sortOrder
+                }
+            });
+
        } catch (error) {
            console.error('Error fetching tasks:', error);
            res.status(500).json({
@@ -51,12 +97,55 @@ export class TaskController {
        }
    }
 
+   // GET /api/users/:userId/stats - Get task statistics for a user
+    static async getUserStats(req: Request<{ userId: string }>, res: Response) {
+        try {
+            const userId = parseInt(req.params.userId);
+           
+            if (isNaN(userId)) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'INVALID_ID', message: 'User ID must be a number' }
+                });
+            }
+
+            // Verify user exists
+            const user = await userRepository.findOne({ where: { id: userId } });
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    error: { code: 'USER_NOT_FOUND', message: 'User not found' }
+                });
+            }
+
+            // Execute optimized COUNT queries
+            const totalTasks = await taskRepository.count({ where: { userId, isDeleted: false } });
+            const completedTasks = await taskRepository.count({ where: { userId, status: 'completed', isDeleted: false } });
+            const pendingTasks = await taskRepository.count({ where: { userId, status: 'pending', isDeleted: false } });
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    totalTasks,
+                    completedTasks,
+                    pendingTasks
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching user stats:', error);
+            res.status(500).json({
+                success: false,
+                error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch user stats' }
+            });
+        }
+    }
 
    // POST /api/users/:userId/tasks - Create a task for a user
-   static async createTask(req: Request<{ userId: string }>, res: Response) {
+   static async createTask(req: Request<{ userId: string }, any, CreateTaskDto>, res: Response) {
        try {
            const userId = parseInt(req.params.userId);
-           const { title, description, status, priority, dueDate } = req.body;
+           const { title, description, status, priority, dueDate, categoryId } = req.body;
 
 
            if (isNaN(userId)) {
@@ -93,14 +182,26 @@ export class TaskController {
                });
            }
 
+           // Verify category exists if a categoryId was provided
+           if (categoryId) {
+            const category = await categoryRepository.findOne({ where: { id: categoryId } });
+            if (!category) {
+                return res.status(404).json ({
+                    success: false,
+                    error: { code: 'CATEGORY_NOT_FOUND', message: 'Category not found' }
+                });
+            }
+           }
+
 
            const task = taskRepository.create({
                title,
                description,
-               status: status || 'pending',
-               priority: priority || 'medium',
-               dueDate: dueDate || null,
-               userId
+               status,
+               priority,
+               dueDate,
+               user,
+               categoryId: categoryId || null 
            });
 
 
@@ -136,7 +237,7 @@ export class TaskController {
 
 
            const task = await taskRepository.findOne({ where: { id } });
-           if (!task) {
+           if (!task || task.isDeleted) { // Added isDeleted to return 404 if soft-deleted
                return res.status(404).json({
                    success: false,
                    error: { code: 'TASK_NOT_FOUND', message: 'Task not found' }
@@ -144,7 +245,8 @@ export class TaskController {
            }
 
 
-           await taskRepository.remove(task);
+            task.isDeleted = true;
+            await taskRepository.save(task);
 
 
            res.json({
