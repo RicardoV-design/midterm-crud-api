@@ -2,14 +2,18 @@ import {
    Entity,
    PrimaryGeneratedColumn,
    Column,
-   CreateDateColumn,
-   UpdateDateColumn,
    ManyToOne,
    JoinColumn,
-   Index
+   Index,
+   ManyToMany,
+   JoinTable,
+   CreateDateColumn,
+   UpdateDateColumn
+
 } from 'typeorm';
 import { User } from './User';
 import { Category } from './Category'; 
+import { Tag } from './Tag';
 
 
 @Entity('tasks')
@@ -66,6 +70,11 @@ export class Task {
    @Column({ type: 'boolean', default: false})
    isDeleted!: boolean;
 
+   @ManyToMany(() => Tag, tag => tag.tasks)
+
+   @JoinTable()
+   tags!: Tag[];
+
 
    @CreateDateColumn()
    createdAt!: Date;
@@ -73,4 +82,28 @@ export class Task {
 
    @UpdateDateColumn()
    updatedAt!: Date;
+
+   //  Virtual Getter Method
+    get isOverdue(): boolean {
+        // If there is no due date, or the task is completed, it's not overdue
+        if (!this.dueDate || this.status === 'completed') {
+            return false;
+        }
+
+        const today = new Date();
+        // Reset time to midnight comparing strict dates
+        today.setHours(0, 0, 0, 0); 
+        
+        const due = new Date(this.dueDate);
+        
+        return due < today;
+    }
+
+    // Override toJSON to expose the getter to Express
+    toJSON() {
+        return {
+            ...this,
+            isOverdue: this.isOverdue // Manually append the evaluated getter
+        };
+    }
 }

@@ -2,10 +2,9 @@ import {
     Entity, 
     PrimaryGeneratedColumn, 
     Column, 
-    CreateDateColumn, 
-    UpdateDateColumn,
     OneToMany,
-    Index
+    CreateDateColumn, 
+    UpdateDateColumn
 
 } from 'typeorm';
 import { Task } from './Task';

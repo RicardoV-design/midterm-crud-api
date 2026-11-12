@@ -33,12 +33,28 @@ app.get('/health', (req, res) => {
 });
 
 
-// Routes
-app.use('/api/users', userRoutes);
-app.use('/api', taskRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/auth', authRoutes);
+// V1 Routes
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1', taskRoutes);
+app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/auth', authRoutes);
 
+// Deprecated V0 Routes (410 Gone)
+
+app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/v1')) {
+        return next();
+    }
+
+    // 410 handler, deprecated V0 old /api/ endpoint
+    res.status(410).json({
+        success: false,
+        error: {
+            code: 'GONE',
+            message: 'This endpoint has moved. Please use the /api/v1/ prefix (e.g., /api/v1/users).'
+        }
+    });
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -57,13 +73,42 @@ AppDataSource.initialize()
    .then(() => {
        console.log('✅ Database connected successfully!');
       
-       // Routes
-       app.use('/api/users', userRoutes);
-      
-       // Start server
-       app.listen(PORT, () => {
-           console.log(`🚀 Server running on http://localhost:${PORT}`);
+       // Server running
+       const server = app.listen(PORT, () => {
+            console.log(`🚀 Server running on http://localhost:${PORT}`);
        });
+      
+    // Graceful Shutdown
+       const gracefulShutdown = async (signal: string) => {
+           console.log(`\n${signal} received. Initiating graceful shutdown...`);
+
+           // Stop accepting new requests
+           server.close(async (err) => {
+               if (err) {
+                   console.error('Error closing Express server:', err);
+                   process.exit(1);
+               }
+               console.log('Express server safely closed.');
+
+               // Close the database connection
+               try {
+                   if (AppDataSource.isInitialized) {
+                       await AppDataSource.destroy();
+                       console.log('TypeORM database connection safely destroyed.');
+                   }
+                   
+                   console.log('Graceful shutdown complete. Goodbye!');
+                   process.exit(0); // Exit cleanly
+               } catch (dbError) {
+                   console.error('Error during database disconnection:', dbError);
+                   process.exit(1); // Exit with error
+               }
+           });
+       };
+
+       // Listen for system termination signals
+       process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+       process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
    })
    .catch((error) => {
        console.error('❌ Database connection failed:', error);

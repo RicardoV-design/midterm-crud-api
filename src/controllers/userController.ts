@@ -1,7 +1,9 @@
 import { Request, Response } from 'express'; 
 import { AppDataSource } from '../config/data-source';
 import { User } from '../entities/User';
+import { Task } from '../entities/Task';
 import { CreateUserDto, UpdateUserDto } from '../dto/user.dto';
+import { CreateUserWithTaskDto } from '../dto/user.dto';
 import bcrypt from 'bcrypt';
 
 const userRepository = AppDataSource.getRepository(User); 
@@ -171,6 +173,85 @@ export class UserController {
             }); 
         }
     }
+
+    //POST /api/users/with-initial-task
+    static async createUserWithInitialTask (req: Request<any, any, CreateUserWithTaskDto>, res: Response) {
+        try {
+            const { name, email, password, phoneNumber, taskTitle, taskDescription, taskStatus, taskPriority, taskDueDate, categoryId } = req.body; 
+
+            if (!name || !email || !password || !taskTitle) {
+                return res.status(400).json ({
+                    sucess: false, 
+                    error: { code: 'MISSING_FIELDS', message: 'Name, email, password, and taskTitle are required'}
+                });
+            }
+        // Start the transaction
+        await AppDataSource.transaction(async (transactionalEntityManager) => {
+
+            // Checking if email exists with transaction manager
+            const existingUser = await transactionalEntityManager.findOne(User, { where: { email } });
+            if (existingUser) {
+                throw new Error('EMAIL_EXISTS'); // Throwing an error automatically rolls back the transaction
+            }
+
+            // Hash password
+            const saltrounds = 10;
+            const hashPassword = await bcrypt.hash(password, saltrounds);
+
+            // Create and save User
+            const user = transactionalEntityManager.create(User, {
+                name,
+                email, 
+                password: hashPassword,
+                phoneNumber: phoneNumber || null
+            });
+                const savedUser = await transactionalEntityManager.save(user);
+
+            // Create and save Task, explicitly linking it to savedUser
+            const task = transactionalEntityManager.create(Task, {
+                    title: taskTitle,
+                    description: taskDescription,
+                    status: taskStatus || 'pending',
+                    priority: taskPriority || 'medium',
+                    dueDate: taskDueDate,
+                    user: savedUser,
+                    categoryId: categoryId || null
+                });
+                const savedTask = await transactionalEntityManager.save(task);
+
+                // Remove password before sending the response
+                const { password: removedPassword, ...userWithoutPassword } = savedUser;
+
+                // Reaching here, the transaction is automatically committed to the database
+                return res.status(201).json({
+                    success: true,
+                    message: 'User and initial task created successfully',
+                    data: {
+                        user: userWithoutPassword,
+                        task: savedTask
+                    }
+                });
+            });
+            
+        } catch (error: any) {
+            console.error('Transaction Error:', error);
+            
+            // Handle custom thrown error
+            if (error.message === 'EMAIL_EXISTS') {
+                return res.status(409).json({
+                    success: false,
+                    error: { code: 'EMAIL_EXISTS', message: 'A user with this email already exists' }
+                });
+            }
+
+            // Handle any other unexpected errors (like database constraint failures)
+            res.status(500).json({
+                success: false,
+                error: { code: 'TRANSACTION_FAILED', message: 'Failed to create user and task. Transaction rolled back.' }
+            });
+        }
+    }
+
     //PUT /api/users:id - Update a user
     static async update(req: Request<{ id: string }, any, UpdateUserDto>, res: Response) {
         try {

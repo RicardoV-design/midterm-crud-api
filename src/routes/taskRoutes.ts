@@ -4,6 +4,8 @@ import { TaskController } from '../controllers/taskController';
 
 export const taskRoutes = Router();
 
+// Overdue tasks
+taskRoutes.get('/tasks/overdue', TaskController.getOverdue);
 
 // Nested routes under users
 taskRoutes.get('/users/:userId/tasks', TaskController.getUserTasks);

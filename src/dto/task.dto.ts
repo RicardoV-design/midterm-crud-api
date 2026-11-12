@@ -5,4 +5,5 @@ export interface CreateTaskDto {
     priority: 'low' | 'medium' | 'high';
     dueDate: string;
     categoryId?: number;
+    tags?: string[];
 }

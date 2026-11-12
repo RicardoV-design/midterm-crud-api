@@ -12,6 +12,9 @@ userRoutes.get('/:id', UserController.getById);
 //POST /api/users
 userRoutes.post('/', UserController.create);
 
+//POST /api/users/with-initial-task
+userRoutes.post('/with-initial-task', UserController.createUserWithInitialTask);
+
 //PUT /api/users/:id
 userRoutes.put('/:id', UserController.update);
 

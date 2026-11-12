@@ -3,12 +3,14 @@ import { AppDataSource } from '../config/data-source';
 import { User } from '../entities/User';
 import { Task } from '../entities/Task';
 import { Category } from '../entities/Category';
+import { Tag } from '../entities/Tag';
 import { CreateTaskDto } from '../dto/task.dto';
-
+import { customTaskRepository } from '../repositories/TaskRepository';
 
 const taskRepository = AppDataSource.getRepository(Task);
 const userRepository = AppDataSource.getRepository(User);
 const categoryRepository = AppDataSource.getRepository(Category);
+const tagRepository = AppDataSource.getRepository(Tag);
 
 
 export class TaskController {
@@ -141,11 +143,35 @@ export class TaskController {
         }
     }
 
+    // GET /api/tasks/overdue - Get all overdue tasks across all users
+    static async getOverdue (req: Request, res: Response) {
+        try {
+            // calling new custom Repository
+            const overdueTasks = await customTaskRepository.findOverdueTasks ();
+
+            res.status(200).json ({
+                success: true, 
+                count: overdueTasks.length,
+                data:overdueTasks
+            }); 
+
+        } catch (error) {
+            console.error('Error fetching overdue tasks:', error);
+            res.status(500).json ({
+                success: false, 
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: 'Failed to fetch overdue tasks'
+                }
+            });
+        }
+    }
+
    // POST /api/users/:userId/tasks - Create a task for a user
    static async createTask(req: Request<{ userId: string }, any, CreateTaskDto>, res: Response) {
        try {
            const userId = parseInt(req.params.userId);
-           const { title, description, status, priority, dueDate, categoryId } = req.body;
+           const { title, description, status, priority, dueDate, categoryId, tags } = req.body;
 
 
            if (isNaN(userId)) {
@@ -155,6 +181,15 @@ export class TaskController {
                });
            }
 
+           // HTML sanitization function, regex looks between <> then removes it
+           const sanitize = (input: string | undefined) => {
+            if (!input) return input;
+            return input.replace(/<[^>]*>?/gm, '');
+           };
+
+           // Clean the inputs before validating and save
+           const sanitizedTitle = sanitize(title) as string; 
+           const sanitizedDescription = sanitize(description);
 
            // Verify user exists
            const user = await userRepository.findOne({ where: { id: userId } });
@@ -193,15 +228,31 @@ export class TaskController {
             }
            }
 
+           // Tag logic
+           let taskTags: Tag[] = [];
+           if(tags && Array.isArray(tags)) {
+            for (const tagName of tags) {
+
+                // Checking if tags already exists 
+                let tag = await tagRepository.findOne({ where: { name: tagName } });
+                    if (!tag) {
+                        // Create and save new tag if it doesn't exist
+                        tag = tagRepository.create({ name: tagName });
+                        tag = await tagRepository.save(tag);
+                    }
+                    taskTags.push(tag);
+                }
+            }
 
            const task = taskRepository.create({
-               title,
-               description,
+               title: sanitizedTitle,
+               description: sanitizedDescription,
                status,
                priority,
                dueDate,
                user,
-               categoryId: categoryId || null 
+               categoryId: categoryId || null,
+               tags: taskTags 
            });
 
 
