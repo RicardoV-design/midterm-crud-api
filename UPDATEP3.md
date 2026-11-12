@@ -7,3 +7,5 @@ Added Phase 3: Advanced Scenarios & Architecture, Final Polish & Documentation (
 28. Add Virtual/Computed Properties (adding isOverdue on Task Entity making sure to reflect on JSON response) - DONE
 29. Graceful Shutdown (updating src/index.ts to listen for SIGINT and SIGTERM signals closing Express Server) - DONE
 30. API Versioning (moving all routes to API V1 vesion) - DONE
+31. Update Documentation (updating README.md) - DONE
+32. Final Verification (testing) - DONE
